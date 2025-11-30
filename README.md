@@ -4,103 +4,120 @@
 
 A **free, open-source Dockerized stack** for integrating **Grok** (via xAI API and CodeGPT plugin) with **MCP (Model Context Protocol)** servers. This setup chains:
 - **Git MCP**: Version control ops (diff, commit, grep) on local repos.
-- **Web Search MCP**: Privacy-focused browsing/searches without external APIs.
+- **Web Search MCP**: Privacy-focused browsing/searches without external APIs (via self-hosted SearXNG).
 - **Local Library MCP**: Scan/extract from PDFs, MDs, and file libs (e.g., ebooks).
 
-Perfect for PyCharm users wanting Grok to "see" your LAN: Research web → Cross-ref local docs → Update Git—all in one prompt. Runs on a single Precision workstation or homelab server. **Zero third-party keys required** (uses self-hosted SearXNG for web).
+Perfect for PyCharm users wanting Grok to "see" your LAN: Research web → Cross-ref local docs → Update Git—all in one prompt. Runs on a single workstation or homelab server. **Zero third-party keys required**.
+
+## Files Overview
+This repo provides two deployment flavors: **Modular** (recommended for simplicity; separate containers) and **Bundled** (all-in-one image via Dockerfile/entrypoint.sh for advanced chaining).
+
+- **[docker-compose.yml](https://github.com/madking2099/grok_mcp_setup/blob/master/docker-compose.yml)**: Orchestrates the modular stack (three services). Uses official images; no build needed.
+- **[Dockerfile](https://github.com/madking2099/grok_mcp_setup/blob/master/Dockerfile)**: Builds a single "mcp-hub" image bundling all servers (Python/Node deps). Use for the bundled variant.
+- **[entrypoint.sh](https://github.com/madking2099/grok_mcp_setup/blob/master/entrypoint.sh)**: Launches Git/Web/Library servers concurrently in the bundled image. Handles env vars like `ALLOWED_PATHS`.
+- **[README.md](https://github.com/madking2099/grok_mcp_setup/blob/master/README.md)**: You're reading it! (This file.)
+- **Optional**: `.env.example` (for paths/ports), `searxng-settings.yml` (web config), `pdf_server.py` (PDF extraction stub—add via PR).
+
+For bundled mode, swap the compose service to `build: .` and reference entrypoint.sh.
 
 ## Features
-- **Modular & Lightweight**: 3 isolated containers (<1GB RAM), HTTP-exposed for LAN access.
-- **Air-Gapped Ready**: Local-only ops; web via self-hosted meta-search (no cloud lock-in).
-- **Grok Synergy**: Hooks into CodeGPT for tool-calling—e.g., "Diff my repo, search 'PyTorch async', extract from ebook.pdf."
-- **Extensible**: Easy to add MCP servers (e.g., OCR, DB queries) via compose.
-- **Secure**: Read-only volumes, whitelisted paths, bridge network.
+- **Modular & Lightweight**: <1GB RAM, HTTP-exposed for LAN.
+- **Air-Gapped Ready**: Local ops; SearXNG aggregates free engines (no cloud).
+- **Grok Synergy**: CodeGPT tool-calls for chains like "Diff repo, search 'PyTorch async', extract ebook.pdf."
+- **Extensible**: Add MCPs (e.g., OCR) via compose.
+- **Secure**: Read-only volumes, whitelisted paths.
 
 ## Prerequisites
 - Docker & Docker Compose (v2+).
-- CodeGPT plugin in PyCharm (with xAI API key for Grok).
-- Git repos/PDF libs mounted (e.g., `/pub/your-repo`, `/pub/ebooks`).
-- Optional: `.env` file for custom paths/ports.
+- CodeGPT in PyCharm (xAI API key for Grok).
+- Mounted dirs (e.g., `/pub/your-repo` for Git, `/pub/ebooks` for libs).
+- Optional: Clone MCP sources into `./src` for bundled builds (`git clone https://github.com/modelcontextprotocol/servers src`).
 
 ## Quick Start
 1. **Clone & Prep**:
    ```bash
    git clone https://github.com/madking2099/grok_mcp_setup.git
    cd grok_mcp_setup
-   # Create .env (optional; see example below)
-   cp .env.example .env
+   cp .env.example .env  # Customize paths/ports
+   # For bundled: git clone https://github.com/modelcontextprotocol/servers src
    ```
 
-2. **(Optional) Add Custom Scripts**:
-   - For local lib PDF extraction, create `pdf_server.py` (MCP wrapper with `pdfplumber`—see [examples](https://github.com/modelcontextprotocol/servers/tree/main/src/pdf) or ping the repo issues).
+2. **(Optional) Add PDF Extraction**:
+   - Create `pdf_server.py` (MCP wrapper with `pdfplumber`—see [MCP PDF examples](https://github.com/modelcontextprotocol/servers/tree/main/src/pdf) or open an issue).
 
-3. **Launch the Stack**:
+3. **Launch (Modular - Recommended)**:
    ```bash
    docker compose up -d
-   # Check: docker compose ps (all healthy?)
-   # Logs: docker compose logs -f mcp-web
+   # Verify: docker compose ps
+   # Logs: docker compose logs -f mcp-git
    ```
 
-4. **Configure CodeGPT**:
-   - In PyCharm > CodeGPT Settings > MCP tab, edit `~/.codegpt/mcp.json`:
+4. **Or Launch (Bundled - Advanced)**:
+   - Edit `docker-compose.yml`: Change `mcp-hub` service to `build: .` and add `entrypoint: ["/app/entrypoint.sh"]`.
+   - Then: `docker compose up -d --build`.
+
+5. **Configure CodeGPT**:
+   - Edit `~/.codegpt/mcp.json`:
      ```json
      {
        "mcpServers": {
          "lan-git": { "type": "http", "url": "http://localhost:8001" },
-         "lan-web": { "type": "http", "url": "http://localhost:8002/search?q=query" },  // SearXNG endpoint
+         "lan-web": { "type": "http", "url": "http://localhost:8002/search?q=query" },
          "lan-lib": { "type": "http", "url": "http://localhost:8003" }
        }
      }
      ```
-   - Refresh connections. Test in chat: "Using lan-git, ls /projects; lan-web, search 'MCP Docker tips'; lan-lib, extract text from /ebooks/sample.pdf."
+   - Refresh in PyCharm. Test: "Using lan-git, ls /projects; lan-web, search 'MCP tips'; lan-lib, extract /ebooks/sample.pdf."
 
-5. **Access Services**:
+6. **Access**:
    - Git: `curl http://localhost:8001/health`
-   - Web: Browse `http://localhost:8002` (SearXNG UI for manual tests).
+   - Web: `http://localhost:8002` (SearXNG UI)
    - Lib: `curl http://localhost:8003/list?path=/ebooks`
 
 ## Customization
-- **.env Example** (create `.env`):
+- **.env Example**:
   ```
-  PROJECTS_PATH=/pub/your-repo  # Git mount
-  LIBRARY_PATH=/pub/ebooks      # PDF/MD mount
+  PROJECTS_PATH=/pub/your-repo
+  LIBRARY_PATH=/pub/ebooks
   GIT_PORT=8001
   WEB_PORT=8002
   LIB_PORT=8003
   ```
-- **Add SearXNG Config**: Drop `searxng-settings.yml` to filter engines (e.g., DuckDuckGo only). See [docs](https://docs.searxng.org/).
-- **Extend Stack**: Add a service for Markdownify:
+- **SearXNG Config**: Edit `searxng-settings.yml` for engines (e.g., DuckDuckGo only). [Docs](https://docs.searxng.org/).
+- **Bundled Tweaks**: In `entrypoint.sh`, adjust `BRAVE_API_KEY` env if adding back (optional).
+- **Extend**: Add Markdownify service:
   ```yaml
   mcp-md:
     image: node:20-slim
-    command: ["npx", "@modelcontextprotocol/server-markdownify", "--transport", "http", "--host", "0.0.0.0", "--port", "8004"]
+    command: ["npx", "@modelcontextprotocol/server-markdownify", "--http", "0.0.0.0:8004"]
     ports: ["8004:8004"]
   ```
-- **LAN Mode**: Replace `localhost` with your IP (e.g., `192.168.1.x`) in `mcp.json`; firewall ports via UFW.
 
 ## Architecture
-- **mcp-git**: Official MCP Git server for semantic repo queries.
-- **mcp-web**: SearXNG meta-search (aggregates 70+ engines, self-hosted—no keys!).
-- **mcp-lib**: Python-based filesystem + PDF reader (uses `pdfplumber` for text/regex extraction).
+- **mcp-git**: Semantic repo queries ([command in compose](https://github.com/madking2099/grok_mcp_setup/blob/master/docker-compose.yml#L5)).
+- **mcp-web**: SearXNG meta-search (no keys).
+- **mcp-lib**: Filesystem + PDF reader (via `pdf_server.py`).
 
-Prompt Flow: Grok → CodeGPT → MCP Call → Tool Response → Chained Output.
+Bundled alt: [Dockerfile](https://github.com/madking2099/grok_mcp_setup/blob/master/Dockerfile) + [entrypoint.sh](https://github.com/madking2099/grok_mcp_setup/blob/master/entrypoint.sh) for single-container chaining.
+
+Prompt Flow: Grok → CodeGPT → MCP → Tool Response.
 
 ## Troubleshooting
-- **Port Conflicts**: Tweak `.env` ports; `docker compose down` to reset.
-- **Volume Permissions**: Ensure mounts are readable (`chmod -R o+r /pub`).
-- **SearXNG Slow?**: Increase `UWSGI_WORKERS` in compose; it's CPU-bound on first run.
-- **MCP Errors**: Check logs; ensure `mcp[cli]` deps if customizing Python services.
-- **No Web Results?**: Verify SearXNG at `/8002`—if blank, restart and check settings.yml.
+- **Hybrid Compose Errors**: If ports/volumes conflict, use the modular version above.
+- **Build Fails**: Ensure `./src` for COPY in [Dockerfile](https://github.com/madking2099/grok_mcp_setup/blob/master/Dockerfile); check logs.
+- **Permissions**: `chmod -R o+r /pub`; UFW for LAN: `ufw allow from 192.168.0.0/24 to any port 8001:8003`.
+- **SearXNG Slow**: Bump `UWSGI_WORKERS=4`; initial run indexes engines.
+- **No PDF Extract?**: Implement `pdf_server.py` or fallback to filesystem-only.
 
 ## Contributing
-Fork, PR, or open issues! Ideas: Integrate Kavita API for ebook metadata, or Tesseract OCR for scanned PDFs.
+Fork/PR ideas: Tesseract OCR, Kavita ebook API, VS Code port. Open issues for bugs!
 
 ## License
-MIT © madking2099. See [LICENSE](LICENSE) (add one if missing).
+MIT © madking2099. See [LICENSE](LICENSE) (add if missing).
 
 ## Acknowledgments
-- [Model Context Protocol](https://modelcontextprotocol.org/) for the magic.
-- [SearXNG](https://searxng.org/) for free web tools.
-- xAI/Grok for the brainpower. 🚀
+- [Model Context Protocol](https://modelcontextprotocol.org/).
+- [SearXNG](https://searxng.org/).
+- xAI/Grok. 🚀
 
-**Star if it sparks your homelab!** Questions? [@madking2099 on X](https://x.com/madking2099).
+**Star if it powers your setup!** [@madking2099 on X](https://x.com/madking2099).
