@@ -1,0 +1,73 @@
+version: '3.8'
+
+services:
+  # Git MCP: For repo ops (diff, commit, grep) on your mounted projects
+  mcp-git:
+    image: ghcr.io/modelcontextprotocol/servers:v0.1.0  # Official MCP base; assumes Git server baked in
+    container_name: mcp-git
+    stdin_open: true
+    tty: true
+    volumes:
+      - ${PROJECTS_PATH:-/pub/your-repo}:/projects:ro  # Mount your Git repos here
+    ports:
+      - "${GIT_PORT:-8001}:8001"
+    command: ["mcp-server-git", "--transport", "http", "--host", "0.0.0.0", "--port", "8001", "--repository", "/projects"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - mcp-net
+
+  # Web Search MCP: Self-hosted SearXNG for privacy-first searches (no API key!)
+  mcp-web:
+    image: sebp/omegasearch:latest  # SearXNG Docker image (free, open-source meta-search)
+    container_name: mcp-web
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8002
+      - UWSGI_WORKERS=2  # Tune for your Precision's cores
+    ports:
+      - "${WEB_PORT:-8002}:8080"  # Maps SearXNG's 8080 to 8002
+    volumes:
+      - ./searxng-settings.yml:/etc/searxng/settings.yml:ro  # Optional: Custom config for engines/filters
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - mcp-net
+
+  # Local Library MCP: Filesystem + PDF extraction hybrid for PDFs/MDs/ebooks
+  mcp-lib:
+    image: python:3.12-slim  # Lightweight base for custom PDF tools
+    container_name: mcp-lib
+    volumes:
+      - ${LIBRARY_PATH:-/pub/ebooks}:/ebooks:ro  # Your PDF/MD library
+      - ./pdf_server.py:/app/pdf_server.py:ro  # You'll add this script (see README)
+    working_dir: /app
+    command: ["python", "pdf_server.py", "--transport", "http", "--host", "0.0.0.0", "--port", "8003", "--allowed-paths", "/ebooks"]
+    ports:
+      - "${LIB_PORT:-8003}:8003"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - mcp-net
+
+networks:
+  mcp-net:
+    driver: bridge
+
+# Optional: .env example (create this file for easy customization)
+# PROJECTS_PATH=/pub/your-repo
+# LIBRARY_PATH=/pub/ebooks
+# GIT_PORT=8001
+# WEB_PORT=8002
+# LIB_PORT=8003
