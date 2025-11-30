@@ -1,14 +1,14 @@
 version: '3.8'
 
 services:
-  # Git MCP: For repo ops (diff, commit, grep) on your mounted projects
+  # Git MCP: Repo ops on mounted projects
   mcp-git:
-    image: ghcr.io/modelcontextprotocol/servers:v0.1.0  # Official MCP base; assumes Git server baked in
+    image: ghcr.io/modelcontextprotocol/servers:v0.1.0  # Official; fallback to build if needed
     container_name: mcp-git
     stdin_open: true
     tty: true
     volumes:
-      - ${PROJECTS_PATH:-/pub/your-repo}:/projects:ro  # Mount your Git repos here
+      - ${PROJECTS_PATH:-/pub/your-repo}:/projects:ro
     ports:
       - "${GIT_PORT:-8001}:8001"
     command: ["mcp-server-git", "--transport", "http", "--host", "0.0.0.0", "--port", "8001", "--repository", "/projects"]
@@ -21,17 +21,17 @@ services:
     networks:
       - mcp-net
 
-  # Web Search MCP: Self-hosted SearXNG for privacy-first searches (no API key!)
+  # Web Search MCP: Self-hosted SearXNG (no API key)
   mcp-web:
-    image: sebp/omegasearch:latest  # SearXNG Docker image (free, open-source meta-search)
+    image: sebp/omegasearch:latest
     container_name: mcp-web
     environment:
       - SEARXNG_BASE_URL=http://localhost:8002
-      - UWSGI_WORKERS=2  # Tune for your Precision's cores
+      - UWSGI_WORKERS=2
     ports:
-      - "${WEB_PORT:-8002}:8080"  # Maps SearXNG's 8080 to 8002
+      - "${WEB_PORT:-8002}:8080"
     volumes:
-      - ./searxng-settings.yml:/etc/searxng/settings.yml:ro  # Optional: Custom config for engines/filters
+      - ./searxng-settings.yml:/etc/searxng/settings.yml:ro  # Optional config
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
@@ -41,13 +41,13 @@ services:
     networks:
       - mcp-net
 
-  # Local Library MCP: Filesystem + PDF extraction hybrid for PDFs/MDs/ebooks
+  # Local Library MCP: Filesystem + PDF extraction
   mcp-lib:
-    image: python:3.12-slim  # Lightweight base for custom PDF tools
+    image: python:3.12-slim
     container_name: mcp-lib
     volumes:
-      - ${LIBRARY_PATH:-/pub/ebooks}:/ebooks:ro  # Your PDF/MD library
-      - ./pdf_server.py:/app/pdf_server.py:ro  # You'll add this script (see README)
+      - ${LIBRARY_PATH:-/pub/ebooks}:/ebooks:ro
+      - ./pdf_server.py:/app/pdf_server.py:ro  # Add this file for extraction
     working_dir: /app
     command: ["python", "pdf_server.py", "--transport", "http", "--host", "0.0.0.0", "--port", "8003", "--allowed-paths", "/ebooks"]
     ports:
@@ -64,10 +64,3 @@ services:
 networks:
   mcp-net:
     driver: bridge
-
-# Optional: .env example (create this file for easy customization)
-# PROJECTS_PATH=/pub/your-repo
-# LIBRARY_PATH=/pub/ebooks
-# GIT_PORT=8001
-# WEB_PORT=8002
-# LIB_PORT=8003
